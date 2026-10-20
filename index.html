@@ -1,0 +1,891 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<!-- 答辩讲解用：移动端适配，宽度等于设备宽度，初始缩放1，禁止用户缩放避免误操作 -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#6366f1">
+<title>网课记录本</title>
+<style>
+  /* 答辩讲解用：全局重置与基础样式，使用系统字体栈保证移动端原生质感 */
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  :root {
+    --PRIMARY_COLOR: #6366f1;
+    --PRIMARY_DARK: #4f46e5;
+    --BG_COLOR: #f5f5f7;
+    --CARD_BG: #ffffff;
+    --TEXT_MAIN: #1d1d1f;
+    --TEXT_SUB: #86868b;
+    --DANGER: #ff3b30;
+    --SUCCESS: #34c759;
+    --BORDER: #e5e5ea;
+    --SHADOW: 0 2px 12px rgba(0,0,0,0.08);
+  }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--BG_COLOR);
+    color: var(--TEXT_MAIN);
+    line-height: 1.5;
+    overflow-x: hidden;
+  }
+
+  /* 答辩讲解用：顶部标题栏，固定吸顶，渐变背景突出主题 */
+  .app-header {
+    position: sticky; top: 0; z-index: 100;
+    background: linear-gradient(135deg, var(--PRIMARY_COLOR), var(--PRIMARY_DARK));
+    color: #fff; padding: 16px 20px;
+    box-shadow: 0 2px 8px rgba(99,102,241,0.3);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .app-header h1 { font-size: 20px; font-weight: 600; letter-spacing: 0.5px; }
+  .app-header .header-sub { font-size: 12px; opacity: 0.85; margin-top: 2px; }
+
+  /* 答辩讲解用：统计概览区，三宫格展示总课程/总课时/整体完成率 */
+  .stats-bar {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 10px; padding: 14px 16px;
+  }
+  .stat-card {
+    background: var(--CARD_BG); border-radius: 14px; padding: 14px 10px;
+    text-align: center; box-shadow: var(--SHADOW);
+  }
+  .stat-card .stat-num { font-size: 22px; font-weight: 700; color: var(--PRIMARY_COLOR); }
+  .stat-card .stat-label { font-size: 11px; color: var(--TEXT_SUB); margin-top: 4px; }
+
+  /* 答辩讲解用：课程列表容器，留出底部FAB按钮空间避免遮挡 */
+  .course-list { padding: 4px 16px 100px; }
+  .list-empty {
+    text-align: center; color: var(--TEXT_SUB); padding: 60px 20px;
+  }
+  .list-empty .empty-icon { font-size: 56px; opacity: 0.3; margin-bottom: 12px; }
+  .list-empty .empty-text { font-size: 15px; }
+
+  /* 答辩讲解用：单条课程卡片，含名称、进度条、课时数、操作按钮 */
+  .course-card {
+    background: var(--CARD_BG); border-radius: 16px; padding: 16px;
+    margin-bottom: 12px; box-shadow: var(--SHADOW);
+    transition: transform 0.15s ease;
+  }
+  .course-card:active { transform: scale(0.98); }
+  .card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+  .course-name { font-size: 16px; font-weight: 600; flex: 1; word-break: break-all; padding-right: 8px; }
+  .course-status {
+    font-size: 11px; padding: 3px 8px; border-radius: 10px; font-weight: 600; white-space: nowrap;
+  }
+  .status-doing { background: #fff3cd; color: #b8860b; }
+  .status-done { background: #d4edda; color: #1e7e34; }
+  .status-notstart { background: #e8e8ed; color: var(--TEXT_SUB); }
+
+  /* 答辩讲解用：进度条，用CSS渐变宽度表示完成比例，平滑过渡动画 */
+  .progress-wrap { margin-bottom: 12px; }
+  .progress-info { display: flex; justify-content: space-between; font-size: 12px; color: var(--TEXT_SUB); margin-bottom: 6px; }
+  .progress-track { height: 8px; background: #ececf0; border-radius: 4px; overflow: hidden; }
+  .progress-fill {
+    height: 100%; border-radius: 4px;
+    background: linear-gradient(90deg, var(--PRIMARY_COLOR), var(--SUCCESS));
+    transition: width 0.4s ease;
+  }
+
+  /* 答辩讲解用：卡片底部操作区，+1快速记录、编辑、删除 */
+  .card-actions { display: flex; gap: 8px; }
+  .act-btn {
+    flex: 1; border: none; border-radius: 10px; padding: 9px 0;
+    font-size: 13px; font-weight: 600; cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  .act-btn:active { opacity: 0.7; }
+  .btn-plus { background: var(--PRIMARY_COLOR); color: #fff; }
+  .btn-minus { background: #e8e8ed; color: var(--PRIMARY_DARK); }
+  .btn-edit { background: #e8e8ed; color: var(--TEXT_MAIN); }
+  .btn-del { background: #ffeaea; color: var(--DANGER); }
+
+  /* 答辩讲解用：右下角悬浮添加按钮(FAB)，固定定位，点击弹出表单 */
+  .fab {
+    position: fixed; right: 20px; bottom: 24px; z-index: 90;
+    width: 56px; height: 56px; border-radius: 50%; border: none;
+    background: var(--PRIMARY_COLOR); color: #fff; font-size: 28px;
+    box-shadow: 0 4px 16px rgba(99,102,241,0.45); cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: transform 0.15s;
+  }
+  .fab:active { transform: scale(0.9); }
+
+  /* 答辩讲解用：弹窗遮罩与表单，从底部滑入符合移动端交互习惯 */
+  .modal-mask {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 200;
+    display: none; align-items: flex-end; justify-content: center;
+  }
+  .modal-mask.show { display: flex; }
+  .modal-sheet {
+    background: var(--CARD_BG); width: 100%; max-width: 500px;
+    border-radius: 20px 20px 0 0; padding: 20px;
+    animation: slideUp 0.25s ease;
+  }
+  @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  .modal-title { font-size: 18px; font-weight: 600; text-align: center; margin-bottom: 18px; }
+  .form-group { margin-bottom: 14px; }
+  .form-label { display: block; font-size: 13px; color: var(--TEXT_SUB); margin-bottom: 6px; }
+  .form-input {
+    width: 100%; border: 1.5px solid var(--BORDER); border-radius: 10px;
+    padding: 11px 12px; font-size: 15px; outline: none;
+    transition: border-color 0.2s;
+  }
+  .form-input:focus { border-color: var(--PRIMARY_COLOR); }
+  .form-row { display: flex; gap: 12px; }
+  .form-row .form-group { flex: 1; }
+  .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+  .modal-btn {
+    flex: 1; border: none; border-radius: 12px; padding: 12px 0;
+    font-size: 15px; font-weight: 600; cursor: pointer;
+  }
+  .btn-cancel { background: #e8e8ed; color: var(--TEXT_MAIN); }
+  .btn-confirm { background: var(--PRIMARY_COLOR); color: #fff; }
+
+  /* 答辩讲解用：今日清单区块，待办事项可点击划掉 */
+  .todo-section {
+    background: var(--CARD_BG); border-radius: 16px; padding: 16px;
+    margin: 0 16px 14px; box-shadow: var(--SHADOW);
+  }
+  .todo-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .todo-title { font-size: 16px; font-weight: 600; }
+  .todo-count { font-size: 12px; color: var(--TEXT_SUB); }
+  .todo-input-row { display: flex; gap: 8px; margin-bottom: 12px; }
+  .todo-input {
+    flex: 1; border: 1.5px solid var(--BORDER); border-radius: 10px;
+    padding: 9px 12px; font-size: 14px; outline: none; transition: border-color 0.2s;
+  }
+  .todo-input:focus { border-color: var(--PRIMARY_COLOR); }
+  .todo-add {
+    border: none; border-radius: 10px; padding: 0 18px;
+    background: var(--PRIMARY_COLOR); color: #fff; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  .todo-add:active { opacity: 0.7; }
+  .todo-list { display: flex; flex-direction: column; gap: 8px; }
+  .todo-empty { text-align: center; color: var(--TEXT_SUB); font-size: 13px; padding: 14px 0; }
+  .todo-item {
+    display: flex; align-items: center; gap: 10px;
+    background: #f9f9fb; border-radius: 10px; padding: 10px 12px;
+    transition: background 0.2s;
+  }
+  .todo-check {
+    width: 22px; height: 22px; border-radius: 50%;
+    border: 2px solid #c7c7cc; flex-shrink: 0; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; color: transparent; transition: all 0.2s;
+  }
+  .todo-item.done .todo-check { background: var(--SUCCESS); border-color: var(--SUCCESS); color: #fff; }
+  .todo-text { flex: 1; font-size: 14px; word-break: break-all; transition: all 0.2s; }
+  /* 答辩讲解用：完成划掉样式，删除线+灰色文字 */
+  .todo-item.done .todo-text { text-decoration: line-through; color: var(--TEXT_SUB); }
+  .todo-del {
+    border: none; background: transparent; color: #c7c7cc;
+    font-size: 16px; cursor: pointer; padding: 2px 4px; flex-shrink: 0;
+  }
+  .todo-del:active { color: var(--DANGER); }
+
+  /* 答辩讲解用：今日日程表区块，置顶显示按时间排列的当天安排 */
+  .schedule-section {
+    background: var(--CARD_BG); border-radius: 16px; padding: 16px;
+    margin: 14px 16px; box-shadow: var(--SHADOW);
+  }
+  .schedule-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .schedule-title { font-size: 16px; font-weight: 600; }
+  .schedule-date { font-size: 12px; color: var(--TEXT_SUB); }
+  .schedule-input-row { display: flex; gap: 8px; margin-bottom: 12px; }
+  .schedule-time {
+    width: 92px; border: 1.5px solid var(--BORDER); border-radius: 10px;
+    padding: 9px 8px; font-size: 14px; outline: none; transition: border-color 0.2s;
+  }
+  .schedule-time:focus { border-color: var(--PRIMARY_COLOR); }
+  .schedule-text {
+    flex: 1; border: 1.5px solid var(--BORDER); border-radius: 10px;
+    padding: 9px 12px; font-size: 14px; outline: none; transition: border-color 0.2s;
+  }
+  .schedule-text:focus { border-color: var(--PRIMARY_COLOR); }
+  .schedule-list { display: flex; flex-direction: column; gap: 8px; }
+  .schedule-empty { text-align: center; color: var(--TEXT_SUB); font-size: 13px; padding: 14px 0; }
+  .schedule-item {
+    display: flex; align-items: center; gap: 10px;
+    background: #f9f9fb; border-radius: 10px; padding: 10px 12px;
+  }
+  .schedule-time-tag {
+    background: var(--PRIMARY_COLOR); color: #fff; font-size: 12px; font-weight: 600;
+    padding: 3px 8px; border-radius: 6px; flex-shrink: 0;
+  }
+  .schedule-item.routine .schedule-time-tag { background: var(--SUCCESS); }
+  .schedule-content { flex: 1; font-size: 14px; word-break: break-all; }
+  .schedule-tag {
+    font-size: 10px; color: var(--SUCCESS); border: 1px solid var(--SUCCESS);
+    padding: 1px 5px; border-radius: 4px; flex-shrink: 0;
+  }
+  .schedule-del {
+    border: none; background: transparent; color: #c7c7cc;
+    font-size: 16px; cursor: pointer; padding: 2px 4px; flex-shrink: 0;
+  }
+  .schedule-del:active { color: var(--DANGER); }
+
+  /* 答辩讲解用：固定任务区块，设置每周重复课表，自动填入当日程表 */
+  .routine-section {
+    background: var(--CARD_BG); border-radius: 16px; padding: 16px;
+    margin: 0 16px 14px; box-shadow: var(--SHADOW);
+  }
+  .routine-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .routine-title { font-size: 16px; font-weight: 600; }
+  .routine-input-row { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+  .routine-weekday {
+    border: 1.5px solid var(--BORDER); border-radius: 10px;
+    padding: 9px 6px; font-size: 14px; outline: none; background: #fff;
+  }
+  .routine-list { display: flex; flex-direction: column; gap: 8px; }
+  .routine-empty { text-align: center; color: var(--TEXT_SUB); font-size: 13px; padding: 14px 0; }
+  .routine-item {
+    display: flex; align-items: center; gap: 8px;
+    background: #f9f9fb; border-radius: 10px; padding: 10px 12px;
+  }
+  .routine-wd-tag {
+    font-size: 12px; font-weight: 600; color: #fff;
+    padding: 3px 8px; border-radius: 6px; flex-shrink: 0;
+  }
+  .routine-time-tag { font-size: 12px; color: var(--TEXT_SUB); flex-shrink: 0; }
+  .routine-content { flex: 1; font-size: 14px; word-break: break-all; }
+  .routine-del {
+    border: none; background: transparent; color: #c7c7cc;
+    font-size: 16px; cursor: pointer; padding: 2px 4px; flex-shrink: 0;
+  }
+  .routine-del:active { color: var(--DANGER); }
+
+  /* 答辩讲解用：Toast轻提示，用于操作反馈，自动消失 */
+  .toast {
+    position: fixed; left: 50%; bottom: 100px; transform: translateX(-50%);
+    background: rgba(0,0,0,0.8); color: #fff; padding: 10px 20px;
+    border-radius: 20px; font-size: 13px; z-index: 300;
+    opacity: 0; transition: opacity 0.25s; pointer-events: none;
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<div class="app-header">
+  <div>
+    <h1>📚 网课记录本</h1>
+    <div class="header-sub" id="headerSub">记录大学网课学习进度</div>
+  </div>
+</div>
+
+<!-- 答辩讲解用：今日日程表，置顶显示，自动带入当天固定任务+临时添加 -->
+<div class="schedule-section">
+  <div class="schedule-header">
+    <div class="schedule-title">🗓️ 今日日程</div>
+    <div class="schedule-date" id="scheduleDate"></div>
+  </div>
+  <div class="schedule-input-row">
+    <input type="time" class="schedule-time" id="scheduleTime">
+    <input type="text" class="schedule-text" id="scheduleText" placeholder="临时安排，如：去图书馆自习" maxlength="40">
+    <button class="todo-add" id="scheduleAdd">添加</button>
+  </div>
+  <div class="schedule-list" id="scheduleList"></div>
+</div>
+
+<!-- 答辩讲解用：统计概览，三宫格展示总课程数、总课时、整体完成率 -->
+<div class="stats-bar">
+  <div class="stat-card"><div class="stat-num" id="statCount">0</div><div class="stat-label">课程总数</div></div>
+  <div class="stat-card"><div class="stat-num" id="statTotal">0</div><div class="stat-label">总课时</div></div>
+  <div class="stat-card"><div class="stat-num" id="statRate">0%</div><div class="stat-label">整体完成率</div></div>
+</div>
+
+<!-- 答辩讲解用：今日清单区块，记录当天待办，写完点击划掉 -->
+<div class="todo-section">
+  <div class="todo-header">
+    <div class="todo-title">✅ 今日清单</div>
+    <div class="todo-count" id="todoCount">0/0 已完成</div>
+  </div>
+  <div class="todo-input-row">
+    <input type="text" class="todo-input" id="todoInput" placeholder="今天要做什么？如：看完高数第3章" maxlength="50">
+    <button class="todo-add" id="todoAdd">添加</button>
+  </div>
+  <div class="todo-list" id="todoList"></div>
+</div>
+
+<!-- 答辩讲解用：课程列表渲染容器 -->
+<div class="course-list" id="courseList"></div>
+
+<!-- 答辩讲解用：固定任务区块，设置每周重复课表，自动填入当日程表 -->
+<div class="routine-section">
+  <div class="routine-header">
+    <div class="routine-title">🔁 固定任务（每周重复）</div>
+  </div>
+  <div class="routine-input-row">
+    <select class="routine-weekday" id="routineWeekday">
+      <option value="1">周一</option><option value="2">周二</option><option value="3">周三</option>
+      <option value="4">周四</option><option value="5">周五</option><option value="6">周六</option><option value="0">周日</option>
+    </select>
+    <input type="time" class="schedule-time" id="routineTime">
+    <input type="text" class="schedule-text" id="routineText" placeholder="如：高等数学 第1-2节" maxlength="40" style="flex:1;min-width:120px">
+    <button class="todo-add" id="routineAdd">添加</button>
+  </div>
+  <div class="routine-list" id="routineList"></div>
+</div>
+
+<!-- 答辩讲解用：悬浮添加按钮 -->
+<button class="fab" id="fabAdd" aria-label="添加课程">+</button>
+
+<!-- 答辩讲解用：添加/编辑弹窗表单 -->
+<div class="modal-mask" id="modalMask">
+  <div class="modal-sheet">
+    <div class="modal-title" id="modalTitle">添加课程</div>
+    <div class="form-group">
+      <label class="form-label">课程名称</label>
+      <input type="text" class="form-input" id="inputName" placeholder="如：高等数学" maxlength="30">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">总课时数</label>
+        <input type="number" class="form-input" id="inputTotal" placeholder="如：48" min="1" max="999">
+      </div>
+      <div class="form-group">
+        <label class="form-label">已完成课时</label>
+        <input type="number" class="form-input" id="inputDone" placeholder="如：12" min="0" max="999">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="modal-btn btn-cancel" id="btnCancel">取消</button>
+      <button class="modal-btn btn-confirm" id="btnConfirm">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- 答辩讲解用：轻提示元素 -->
+<div class="toast" id="toast"></div>
+
+<script>
+/* 答辩讲解用：网课记录本主逻辑，IIFE单例结构，原生JS实现数据增删改查与渲染 */
+(function () {
+  'use strict';
+
+  // 答辩讲解用：常量定义，UPPER_SNAKE_CASE命名
+  var STORAGE_KEY = 'online_course_records_v1';
+  var TODO_STORAGE_PREFIX = 'todo_list_';
+  var ROUTINE_KEY = 'routine_list_v1';
+  var SCHEDULE_PREFIX = 'schedule_';
+  var WEEKDAY_NAMES = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+  var WEEKDAY_COLORS = ['#ff6b6b', '#fa8c16', '#faad14', '#52c41a', '#13c2c2', '#6366f1', '#eb2f96'];
+
+  // 答辩讲解用：应用状态，courses课程、todayTodos今日清单、routines固定任务、todaySchedules今日临时日程
+  var appState = { courses: [], editingId: null, todayTodos: [], routines: [], todaySchedules: [] };
+
+  // 答辩讲解用：DOM元素引用缓存
+  var dom = {
+    list: document.getElementById('courseList'),
+    statCount: document.getElementById('statCount'),
+    statTotal: document.getElementById('statTotal'),
+    statRate: document.getElementById('statRate'),
+    headerSub: document.getElementById('headerSub'),
+    fabAdd: document.getElementById('fabAdd'),
+    modalMask: document.getElementById('modalMask'),
+    modalTitle: document.getElementById('modalTitle'),
+    inputName: document.getElementById('inputName'),
+    inputTotal: document.getElementById('inputTotal'),
+    inputDone: document.getElementById('inputDone'),
+    btnCancel: document.getElementById('btnCancel'),
+    btnConfirm: document.getElementById('btnConfirm'),
+    toast: document.getElementById('toast'),
+    todoInput: document.getElementById('todoInput'),
+    todoAdd: document.getElementById('todoAdd'),
+    todoList: document.getElementById('todoList'),
+    todoCount: document.getElementById('todoCount'),
+    scheduleDate: document.getElementById('scheduleDate'),
+    scheduleTime: document.getElementById('scheduleTime'),
+    scheduleText: document.getElementById('scheduleText'),
+    scheduleAdd: document.getElementById('scheduleAdd'),
+    scheduleList: document.getElementById('scheduleList'),
+    routineWeekday: document.getElementById('routineWeekday'),
+    routineTime: document.getElementById('routineTime'),
+    routineText: document.getElementById('routineText'),
+    routineAdd: document.getElementById('routineAdd'),
+    routineList: document.getElementById('routineList')
+  };
+
+  /* 答辩讲解用：从localStorage读取课程数据，解析失败返回空数组保证健壮性 */
+  function loadData() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      appState.courses = raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      appState.courses = [];
+    }
+  }
+
+  /* 答辩讲解用：将课程数据写入localStorage持久化 */
+  function saveData() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(appState.courses));
+  }
+
+  /* 答辩讲解用：生成唯一ID，时间戳+随机数避免碰撞 */
+  function genId() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  }
+
+  /* 答辩讲解用：Toast轻提示，msg为文案，1.6秒后自动消失 */
+  var toastTimer = null;
+  function showToast(msg) {
+    dom.toast.textContent = msg;
+    dom.toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { dom.toast.classList.remove('show'); }, 1600);
+  }
+
+  /* 答辩讲解用：渲染统计概览，计算总课程数、总课时、整体完成率 */
+  function renderStats() {
+    var totalCourses = appState.courses.length;
+    var totalLessons = 0;
+    var totalDone = 0;
+    appState.courses.forEach(function (c) {
+      totalLessons += c.total;
+      totalDone += c.done;
+    });
+    dom.statCount.textContent = totalCourses;
+    dom.statTotal.textContent = totalLessons;
+    var rate = totalLessons > 0 ? Math.round(totalDone / totalLessons * 100) : 0;
+    dom.statRate.textContent = rate + '%';
+    dom.headerSub.textContent = totalCourses > 0
+      ? '共 ' + totalCourses + ' 门课 · 已完成 ' + totalDone + '/' + totalLessons + ' 课时'
+      : '记录大学网课学习进度';
+  }
+
+  /* 答辩讲解用：根据完成情况返回状态文案与样式类 */
+  function getStatus(done, total) {
+    if (done <= 0) return { text: '未开始', cls: 'status-notstart' };
+    if (done >= total) return { text: '已完成', cls: 'status-done' };
+    return { text: '学习中', cls: 'status-doing' };
+  }
+
+  /* 答辩讲解用：渲染课程列表，空数据时显示占位提示 */
+  function renderList() {
+    if (appState.courses.length === 0) {
+      dom.list.innerHTML =
+        '<div class="list-empty">' +
+          '<div class="empty-icon">📖</div>' +
+          '<div class="empty-text">还没有记录任何网课<br>点击右下角 + 添加你的第一门课</div>' +
+        '</div>';
+      return;
+    }
+
+    // 答辩讲解用：按完成率升序排列，未完成的优先展示便于跟进
+    var sorted = appState.courses.slice().sort(function (a, b) {
+      var ra = a.total > 0 ? a.done / a.total : 0;
+      var rb = b.total > 0 ? b.done / b.total : 0;
+      return ra - rb;
+    });
+
+    var html = '';
+    sorted.forEach(function (c) {
+      var rate = c.total > 0 ? Math.round(c.done / c.total * 100) : 0;
+      var st = getStatus(c.done, c.total);
+      html +=
+        '<div class="course-card" data-id="' + c.id + '">' +
+          '<div class="card-top">' +
+            '<div class="course-name">' + escapeHtml(c.name) + '</div>' +
+            '<span class="course-status ' + st.cls + '">' + st.text + '</span>' +
+          '</div>' +
+          '<div class="progress-wrap">' +
+            '<div class="progress-info">' +
+              '<span>已完成 ' + c.done + ' / ' + c.total + ' 课时</span>' +
+              '<span>' + rate + '%</span>' +
+            '</div>' +
+            '<div class="progress-track">' +
+              '<div class="progress-fill" style="width:' + rate + '%"></div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="card-actions">' +
+            '<button class="act-btn btn-plus" data-act="plus">+1</button>' +
+            '<button class="act-btn btn-minus" data-act="minus">-1</button>' +
+            '<button class="act-btn btn-edit" data-act="edit">编辑</button>' +
+            '<button class="act-btn btn-del" data-act="del">删除</button>' +
+          '</div>' +
+        '</div>';
+    });
+    dom.list.innerHTML = html;
+  }
+
+  /* 答辩讲解用：HTML转义，防止课程名含特殊字符破坏DOM结构 */
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, function (ch) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch];
+    });
+  }
+
+  /* 答辩讲解用：整体刷新，先存数据再渲染统计与列表 */
+  function refresh() {
+    saveData();
+    renderStats();
+    renderList();
+  }
+
+  /* 答辩讲解用：获取今天星期几(0=周日,1-6=周一至周六) */
+  function getTodayWeekday() { return new Date().getDay(); }
+
+  /* 答辩讲解用：获取日期字符串YYYY-MM-DD，日程按天独立存储 */
+  function getDateStr() {
+    var now = new Date(); var m = now.getMonth() + 1, d = now.getDate();
+    return now.getFullYear() + '-' + (m < 10 ? '0' + m : m) + '-' + (d < 10 ? '0' + d : d);
+  }
+
+  /* 答辩讲解用：获取今日日期显示文案，如"10月17日 周五" */
+  function getTodayDisplay() {
+    var now = new Date();
+    return (now.getMonth() + 1) + '月' + now.getDate() + '日 ' + WEEKDAY_NAMES[now.getDay()];
+  }
+
+  /* 答辩讲解用：加载固定任务(全局存储)和今日临时日程(按日期存储) */
+  function loadRoutines() {
+    try { appState.routines = JSON.parse(localStorage.getItem(ROUTINE_KEY)) || []; }
+    catch (e) { appState.routines = []; }
+  }
+  function saveRoutines() { localStorage.setItem(ROUTINE_KEY, JSON.stringify(appState.routines)); }
+  function loadSchedules() {
+    try { appState.todaySchedules = JSON.parse(localStorage.getItem(SCHEDULE_PREFIX + getDateStr())) || []; }
+    catch (e) { appState.todaySchedules = []; }
+  }
+  function saveSchedules() { localStorage.setItem(SCHEDULE_PREFIX + getDateStr(), JSON.stringify(appState.todaySchedules)); }
+
+  /* 答辩讲解用：添加今日临时日程，校验时间与内容 */
+  function addSchedule() {
+    var time = dom.scheduleTime.value;
+    var text = dom.scheduleText.value.trim();
+    if (!time) { showToast('请选择时间'); return; }
+    if (!text) { showToast('请输入内容'); return; }
+    appState.todaySchedules.push({ id: genId(), time: time, text: text });
+    dom.scheduleText.value = '';
+    saveSchedules();
+    renderSchedule();
+    showToast('已添加到今日日程');
+  }
+  function deleteSchedule(id) {
+    appState.todaySchedules = appState.todaySchedules.filter(function (s) { return s.id !== id; });
+    saveSchedules();
+    renderSchedule();
+  }
+
+  /* 答辩讲解用：添加固定任务，选择星期几+时间+内容，每周自动填入日程 */
+  function addRoutine() {
+    var wd = parseInt(dom.routineWeekday.value, 10);
+    var time = dom.routineTime.value;
+    var text = dom.routineText.value.trim();
+    if (!time) { showToast('请选择时间'); return; }
+    if (!text) { showToast('请输入内容'); return; }
+    appState.routines.push({ id: genId(), weekday: wd, time: time, text: text });
+    dom.routineText.value = '';
+    saveRoutines();
+    renderRoutine();
+    renderSchedule();
+    showToast('已添加固定任务');
+  }
+  function deleteRoutine(id) {
+    appState.routines = appState.routines.filter(function (r) { return r.id !== id; });
+    saveRoutines();
+    renderRoutine();
+    renderSchedule();
+    showToast('已删除');
+  }
+
+  /* 答辩讲解用：渲染今日日程表，合并当天固定任务+临时日程，按时间升序排列 */
+  function renderSchedule() {
+    dom.scheduleDate.textContent = getTodayDisplay();
+    var todayWd = getTodayWeekday();
+    var items = [];
+    appState.routines.forEach(function (r) {
+      if (r.weekday === todayWd) items.push({ id: r.id, time: r.time, text: r.text, isRoutine: true });
+    });
+    appState.todaySchedules.forEach(function (s) {
+      items.push({ id: s.id, time: s.time, text: s.text, isRoutine: false });
+    });
+    items.sort(function (a, b) { return a.time.localeCompare(b.time); });
+
+    if (items.length === 0) {
+      dom.scheduleList.innerHTML = '<div class="schedule-empty">今天还没有日程安排</div>';
+      return;
+    }
+    var html = '';
+    items.forEach(function (it) {
+      html +=
+        '<div class="schedule-item' + (it.isRoutine ? ' routine' : '') + '" data-id="' + it.id + '">' +
+          '<span class="schedule-time-tag">' + it.time + '</span>' +
+          '<div class="schedule-content">' + escapeHtml(it.text) + '</div>' +
+          (it.isRoutine ? '<span class="schedule-tag">固定</span>' : '<button class="schedule-del" data-act="del">✕</button>') +
+        '</div>';
+    });
+    dom.scheduleList.innerHTML = html;
+  }
+
+  /* 答辩讲解用：渲染固定任务列表，按星期几+时间排序，每项带星期彩色标签 */
+  function renderRoutine() {
+    if (appState.routines.length === 0) {
+      dom.routineList.innerHTML = '<div class="routine-empty">还没有固定任务，添加后每周自动填入日程</div>';
+      return;
+    }
+    var sorted = appState.routines.slice().sort(function (a, b) {
+      if (a.weekday !== b.weekday) return a.weekday - b.weekday;
+      return a.time.localeCompare(b.time);
+    });
+    var html = '';
+    sorted.forEach(function (r) {
+      html +=
+        '<div class="routine-item" data-id="' + r.id + '">' +
+          '<span class="routine-wd-tag" style="background:' + WEEKDAY_COLORS[r.weekday] + '">' + WEEKDAY_NAMES[r.weekday] + '</span>' +
+          '<span class="routine-time-tag">' + r.time + '</span>' +
+          '<div class="routine-content">' + escapeHtml(r.text) + '</div>' +
+          '<button class="routine-del" data-act="del">✕</button>' +
+        '</div>';
+    });
+    dom.routineList.innerHTML = html;
+  }
+
+  /* 答辩讲解用：获取今天日期key(YYYY-MM-DD)，清单按天独立存储，每天自动重置 */
+  function getTodayKey() {
+    var now = new Date();
+    var m = now.getMonth() + 1;
+    var d = now.getDate();
+    return TODO_STORAGE_PREFIX + now.getFullYear() + '-' + (m < 10 ? '0' + m : m) + '-' + (d < 10 ? '0' + d : d);
+  }
+
+  /* 答辩讲解用：加载今日清单，解析失败返回空数组保证健壮性 */
+  function loadTodos() {
+    try {
+      var raw = localStorage.getItem(getTodayKey());
+      appState.todayTodos = raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      appState.todayTodos = [];
+    }
+  }
+
+  /* 答辩讲解用：保存今日清单到localStorage持久化 */
+  function saveTodos() {
+    localStorage.setItem(getTodayKey(), JSON.stringify(appState.todayTodos));
+  }
+
+  /* 答辩讲解用：添加清单项，校验非空后推入并刷新 */
+  function addTodo() {
+    var text = dom.todoInput.value.trim();
+    if (!text) { showToast('请输入清单内容'); return; }
+    appState.todayTodos.push({ id: genId(), text: text, done: false });
+    dom.todoInput.value = '';
+    saveTodos();
+    renderTodos();
+    showToast('已添加到今日清单');
+  }
+
+  /* 答辩讲解用：切换清单项完成状态，点击划掉/取消划掉 */
+  function toggleTodo(id) {
+    appState.todayTodos.forEach(function (t) {
+      if (t.id === id) t.done = !t.done;
+    });
+    saveTodos();
+    renderTodos();
+  }
+
+  /* 答辩讲解用：删除清单项，直接从数组过滤移除 */
+  function deleteTodo(id) {
+    appState.todayTodos = appState.todayTodos.filter(function (t) { return t.id !== id; });
+    saveTodos();
+    renderTodos();
+    showToast('已删除');
+  }
+
+  /* 答辩讲解用：渲染今日清单，头部显示已完成/总数，完成项带划掉样式 */
+  function renderTodos() {
+    var total = appState.todayTodos.length;
+    var done = 0;
+    appState.todayTodos.forEach(function (t) { if (t.done) done++; });
+    dom.todoCount.textContent = done + '/' + total + ' 已完成';
+
+    if (total === 0) {
+      dom.todoList.innerHTML = '<div class="todo-empty">今天还没有安排，添加一条吧</div>';
+      return;
+    }
+    var html = '';
+    appState.todayTodos.forEach(function (t) {
+      html +=
+        '<div class="todo-item' + (t.done ? ' done' : '') + '" data-id="' + t.id + '">' +
+          '<div class="todo-check" data-act="toggle">✓</div>' +
+          '<div class="todo-text">' + escapeHtml(t.text) + '</div>' +
+          '<button class="todo-del" data-act="del">✕</button>' +
+        '</div>';
+    });
+    dom.todoList.innerHTML = html;
+  }
+
+  /* 答辩讲解用：打开弹窗，传入课程对象则为编辑模式，否则为新增模式 */
+  function openModal(course) {
+    if (course) {
+      appState.editingId = course.id;
+      dom.modalTitle.textContent = '编辑课程';
+      dom.inputName.value = course.name;
+      dom.inputTotal.value = course.total;
+      dom.inputDone.value = course.done;
+    } else {
+      appState.editingId = null;
+      dom.modalTitle.textContent = '添加课程';
+      dom.inputName.value = '';
+      dom.inputTotal.value = '';
+      dom.inputDone.value = '';
+    }
+    dom.modalMask.classList.add('show');
+    setTimeout(function () { dom.inputName.focus(); }, 260);
+  }
+
+  /* 答辩讲解用：关闭弹窗并重置编辑状态 */
+  function closeModal() {
+    dom.modalMask.classList.remove('show');
+    appState.editingId = null;
+  }
+
+  /* 答辩讲解用：确认提交，校验输入后新增或更新课程 */
+  function confirmSubmit() {
+    var name = dom.inputName.value.trim();
+    var total = parseInt(dom.inputTotal.value, 10);
+    var done = parseInt(dom.inputDone.value, 10);
+
+    if (!name) { showToast('请输入课程名称'); return; }
+    if (!total || total < 1) { showToast('请输入有效的总课时'); return; }
+    if (isNaN(done) || done < 0) done = 0;
+    if (done > total) { showToast('已完成不能超过总课时'); return; }
+
+    if (appState.editingId) {
+      // 答辩讲解用：编辑模式，找到对应项更新
+      appState.courses.forEach(function (c) {
+        if (c.id === appState.editingId) { c.name = name; c.total = total; c.done = done; }
+      });
+      showToast('已更新');
+    } else {
+      // 答辩讲解用：新增模式，推入新课程对象
+      appState.courses.push({ id: genId(), name: name, total: total, done: done });
+      showToast('已添加');
+    }
+    closeModal();
+    refresh();
+  }
+
+  /* 答辩讲解用：快速+1课时，完成时自动提示 */
+  function plusOne(id) {
+    appState.courses.forEach(function (c) {
+      if (c.id === id && c.done < c.total) {
+        c.done += 1;
+        if (c.done >= c.total) { showToast('🎉 ' + c.name + ' 已全部完成！'); }
+        else { showToast('+1 课时'); }
+      }
+    });
+    refresh();
+  }
+
+  /* 答辩讲解用：快速-1课时，已为0时提示无法继续减少 */
+  function minusOne(id) {
+    appState.courses.forEach(function (c) {
+      if (c.id === id && c.done > 0) {
+        c.done -= 1;
+        showToast('-1 课时');
+      } else if (c.id === id && c.done <= 0) {
+        showToast('已完成课时为 0，无法减少');
+      }
+    });
+    refresh();
+  }
+
+  /* 答辩讲解用：删除课程，直接从数组过滤移除 */
+  function deleteCourse(id) {
+    var target = null;
+    appState.courses = appState.courses.filter(function (c) {
+      if (c.id === id) target = c;
+      return c.id !== id;
+    });
+    refresh();
+    showToast(target ? '已删除 ' + target.name : '已删除');
+  }
+
+  /* 答辩讲解用：列表点击事件委托，根据data-act分发到对应处理函数 */
+  dom.list.addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-act]');
+    if (!btn) return;
+    var card = btn.closest('.course-card');
+    if (!card) return;
+    var id = card.getAttribute('data-id');
+    var act = btn.getAttribute('data-act');
+    if (act === 'plus') { plusOne(id); }
+    else if (act === 'minus') { minusOne(id); }
+    else if (act === 'edit') {
+      var course = appState.courses.filter(function (c) { return c.id === id; })[0];
+      if (course) openModal(course);
+    } else if (act === 'del') { deleteCourse(id); }
+  });
+
+  /* 答辩讲解用：绑定按钮事件 */
+  dom.fabAdd.addEventListener('click', function () { openModal(null); });
+  dom.btnCancel.addEventListener('click', closeModal);
+  dom.btnConfirm.addEventListener('click', confirmSubmit);
+  dom.modalMask.addEventListener('click', function (e) {
+    if (e.target === dom.modalMask) closeModal();
+  });
+
+  /* 答辩讲解用：今日清单事件绑定，回车快速添加，点击勾选/删除分发 */
+  dom.todoAdd.addEventListener('click', addTodo);
+  dom.todoInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') addTodo();
+  });
+  dom.todoList.addEventListener('click', function (e) {
+    var el = e.target.closest('[data-act]');
+    if (!el) return;
+    var item = el.closest('.todo-item');
+    if (!item) return;
+    var id = item.getAttribute('data-id');
+    if (el.getAttribute('data-act') === 'toggle') { toggleTodo(id); }
+    else if (el.getAttribute('data-act') === 'del') { deleteTodo(id); }
+  });
+
+  /* 答辩讲解用：今日日程表事件，回车快速添加，删除临时日程 */
+  dom.scheduleAdd.addEventListener('click', addSchedule);
+  dom.scheduleText.addEventListener('keydown', function (e) { if (e.key === 'Enter') addSchedule(); });
+  dom.scheduleList.addEventListener('click', function (e) {
+    var el = e.target.closest('[data-act="del"]');
+    if (!el) return;
+    var item = el.closest('.schedule-item');
+    if (item) deleteSchedule(item.getAttribute('data-id'));
+  });
+
+  /* 答辩讲解用：固定任务事件，回车快速添加，删除后同步刷新日程 */
+  dom.routineAdd.addEventListener('click', addRoutine);
+  dom.routineText.addEventListener('keydown', function (e) { if (e.key === 'Enter') addRoutine(); });
+  dom.routineList.addEventListener('click', function (e) {
+    var el = e.target.closest('[data-act="del"]');
+    if (!el) return;
+    var item = el.closest('.routine-item');
+    if (item) deleteRoutine(item.getAttribute('data-id'));
+  });
+
+  /* 答辩讲解用：首次无数据时写入示例课程，方便用户快速了解功能 */
+  function seedDemoIfEmpty() {
+    if (appState.courses.length === 0) {
+      appState.courses = [
+        { id: genId(), name: '高等数学', total: 64, done: 28 },
+        { id: genId(), name: '大学英语', total: 48, done: 48 },
+        { id: genId(), name: '数据结构', total: 56, done: 12 }
+      ];
+      saveData();
+    }
+  }
+
+  /* 答辩讲解用：初始化，加载数据→示例填充→渲染 */
+  loadData();
+  seedDemoIfEmpty();
+  loadTodos();
+  loadRoutines();
+  loadSchedules();
+  renderStats();
+  renderTodos();
+  renderSchedule();
+  renderRoutine();
+  renderList();
+})();
+</script>
+</body>
+</html>
