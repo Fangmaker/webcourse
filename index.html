@@ -255,6 +255,30 @@
   }
   .routine-del:active { color: var(--DANGER); }
 
+  /* 答辩讲解用：星期多选chips，点击高亮，支持周一到周日任意多选重复日 */
+  .weekday-chips { display: flex; gap: 6px; width: 100%; }
+  .wd-chip {
+    flex: 1; border: 1.5px solid var(--BORDER); border-radius: 8px;
+    padding: 8px 0; font-size: 13px; background: #fff; color: var(--TEXT_SUB);
+    cursor: pointer; transition: all 0.15s;
+  }
+  .wd-chip.active { background: var(--PRIMARY_COLOR); border-color: var(--PRIMARY_COLOR); color: #fff; }
+  /* 答辩讲解用：持续时长下拉选择 */
+  .routine-duration {
+    border: 1.5px solid var(--BORDER); border-radius: 10px;
+    padding: 9px 6px; font-size: 14px; outline: none; background: #fff; color: var(--TEXT_MAIN);
+  }
+  /* 答辩讲解用：已结束日程状态，置灰+删除线，持续时间到后自动关闭 */
+  .schedule-item.over { opacity: 0.55; }
+  .schedule-item.over .schedule-time-tag { background: #c7c7cc; }
+  .schedule-item.over .schedule-content { text-decoration: line-through; color: var(--TEXT_SUB); }
+  .schedule-over-tag {
+    font-size: 10px; color: #fff; background: #c7c7cc;
+    padding: 1px 5px; border-radius: 4px; flex-shrink: 0;
+  }
+  /* 答辩讲解用：固定任务列表中多个星期标签容器 */
+  .routine-wd-tags { display: flex; gap: 4px; flex-wrap: wrap; flex-shrink: 0; }
+
   /* 答辩讲解用：Toast轻提示，用于操作反馈，自动消失 */
   .toast {
     position: fixed; left: 50%; bottom: 100px; transform: translateX(-50%);
@@ -317,11 +341,26 @@
     <div class="routine-title">🔁 固定任务（每周重复）</div>
   </div>
   <div class="routine-input-row">
-    <select class="routine-weekday" id="routineWeekday">
-      <option value="1">周一</option><option value="2">周二</option><option value="3">周三</option>
-      <option value="4">周四</option><option value="5">周五</option><option value="6">周六</option><option value="0">周日</option>
-    </select>
+    <!-- 答辩讲解用：星期多选chips，可同时选周一+周二等多个重复日，只需添加一次 -->
+    <div class="weekday-chips" id="weekdayChips">
+      <button type="button" class="wd-chip" data-wd="1">一</button>
+      <button type="button" class="wd-chip" data-wd="2">二</button>
+      <button type="button" class="wd-chip" data-wd="3">三</button>
+      <button type="button" class="wd-chip" data-wd="4">四</button>
+      <button type="button" class="wd-chip" data-wd="5">五</button>
+      <button type="button" class="wd-chip" data-wd="6">六</button>
+      <button type="button" class="wd-chip" data-wd="0">日</button>
+    </div>
     <input type="time" class="schedule-time" id="routineTime">
+    <!-- 答辩讲解用：持续时间选择，日程按 开始时间-结束时间 显示，到点自动关闭 -->
+    <select class="routine-duration" id="routineDuration" title="持续时间">
+      <option value="30">30分钟</option>
+      <option value="45">45分钟</option>
+      <option value="60" selected>1小时</option>
+      <option value="90">1.5小时</option>
+      <option value="120">2小时</option>
+      <option value="180">3小时</option>
+    </select>
     <input type="text" class="schedule-text" id="routineText" placeholder="如：高等数学 第1-2节" maxlength="40" style="flex:1;min-width:120px">
     <button class="todo-add" id="routineAdd">添加</button>
   </div>
@@ -371,6 +410,7 @@
   var SCHEDULE_PREFIX = 'schedule_';
   var WEEKDAY_NAMES = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
   var WEEKDAY_COLORS = ['#ff6b6b', '#fa8c16', '#faad14', '#52c41a', '#13c2c2', '#6366f1', '#eb2f96'];
+  var DEFAULT_DURATION = 60;
 
   // 答辩讲解用：应用状态，courses课程、todayTodos今日清单、routines固定任务、todaySchedules今日临时日程
   var appState = { courses: [], editingId: null, todayTodos: [], routines: [], todaySchedules: [] };
@@ -400,8 +440,9 @@
     scheduleText: document.getElementById('scheduleText'),
     scheduleAdd: document.getElementById('scheduleAdd'),
     scheduleList: document.getElementById('scheduleList'),
-    routineWeekday: document.getElementById('routineWeekday'),
     routineTime: document.getElementById('routineTime'),
+    routineDuration: document.getElementById('routineDuration'),
+    weekdayChips: document.getElementById('weekdayChips'),
     routineText: document.getElementById('routineText'),
     routineAdd: document.getElementById('routineAdd'),
     routineList: document.getElementById('routineList')
@@ -472,15 +513,9 @@
       return;
     }
 
-    // 答辩讲解用：按完成率升序排列，未完成的优先展示便于跟进
-    var sorted = appState.courses.slice().sort(function (a, b) {
-      var ra = a.total > 0 ? a.done / a.total : 0;
-      var rb = b.total > 0 ? b.done / b.total : 0;
-      return ra - rb;
-    });
-
+    // 答辩讲解用：按添加顺序固定显示，+1/-1调整进度不会改变课程卡片位置
     var html = '';
-    sorted.forEach(function (c) {
+    appState.courses.forEach(function (c) {
       var rate = c.total > 0 ? Math.round(c.done / c.total * 100) : 0;
       var st = getStatus(c.done, c.total);
       html +=
@@ -538,10 +573,15 @@
     return (now.getMonth() + 1) + '月' + now.getDate() + '日 ' + WEEKDAY_NAMES[now.getDay()];
   }
 
-  /* 答辩讲解用：加载固定任务(全局存储)和今日临时日程(按日期存储) */
+  /* 答辩讲解用：加载固定任务(全局存储)和今日临时日程(按日期存储)，旧数据自动迁移 */
   function loadRoutines() {
     try { appState.routines = JSON.parse(localStorage.getItem(ROUTINE_KEY)) || []; }
     catch (e) { appState.routines = []; }
+    // 答辩讲解用：旧数据迁移，单星期weekday升级为weekdays数组并补默认持续时间
+    appState.routines.forEach(function (r) {
+      if (!r.weekdays) r.weekdays = [r.weekday !== undefined ? r.weekday : 1];
+      if (!r.duration) r.duration = DEFAULT_DURATION;
+    });
   }
   function saveRoutines() { localStorage.setItem(ROUTINE_KEY, JSON.stringify(appState.routines)); }
   function loadSchedules() {
@@ -568,15 +608,37 @@
     renderSchedule();
   }
 
-  /* 答辩讲解用：添加固定任务，选择星期几+时间+内容，每周自动填入日程 */
+  /* 答辩讲解用：HH:MM转分钟数，便于比较当前时间与结束时间 */
+  function timeToMinutes(time) {
+    var p = time.split(':');
+    return parseInt(p[0], 10) * 60 + parseInt(p[1], 10);
+  }
+
+  /* 答辩讲解用：开始时间+持续时间计算结束时间，跨午夜则回绕到次日 */
+  function calcEndTime(time, duration) {
+    var total = timeToMinutes(time) + duration;
+    var h = Math.floor(total / 60) % 24;
+    var m = total % 60;
+    return (h < 10 ? '0' + h : h) + ':' + (m < 10 ? '0' + m : m);
+  }
+
+  /* 答辩讲解用：添加固定任务，星期多选+开始时间+持续时间+内容，每周自动填入日程 */
   function addRoutine() {
-    var wd = parseInt(dom.routineWeekday.value, 10);
+    var weekdays = [];
+    Array.prototype.forEach.call(dom.weekdayChips.querySelectorAll('.wd-chip.active'), function (chip) {
+      weekdays.push(parseInt(chip.getAttribute('data-wd'), 10));
+    });
     var time = dom.routineTime.value;
+    var duration = parseInt(dom.routineDuration.value, 10) || DEFAULT_DURATION;
     var text = dom.routineText.value.trim();
-    if (!time) { showToast('请选择时间'); return; }
+    if (weekdays.length === 0) { showToast('请至少选择一个重复日'); return; }
+    if (!time) { showToast('请选择开始时间'); return; }
     if (!text) { showToast('请输入内容'); return; }
-    appState.routines.push({ id: genId(), weekday: wd, time: time, text: text });
+    appState.routines.push({ id: genId(), weekdays: weekdays, time: time, duration: duration, text: text });
     dom.routineText.value = '';
+    Array.prototype.forEach.call(dom.weekdayChips.querySelectorAll('.wd-chip'), function (chip) {
+      chip.classList.remove('active');
+    });
     saveRoutines();
     renderRoutine();
     renderSchedule();
@@ -590,16 +652,24 @@
     showToast('已删除');
   }
 
-  /* 答辩讲解用：渲染今日日程表，合并当天固定任务+临时日程，按时间升序排列 */
+  /* 答辩讲解用：渲染今日日程表，合并当天固定任务+临时日程，按时间升序；固定项显示时间段，到结束时间自动置灰关闭 */
   function renderSchedule() {
     dom.scheduleDate.textContent = getTodayDisplay();
     var todayWd = getTodayWeekday();
+    var nowMin = new Date().getHours() * 60 + new Date().getMinutes();
     var items = [];
     appState.routines.forEach(function (r) {
-      if (r.weekday === todayWd) items.push({ id: r.id, time: r.time, text: r.text, isRoutine: true });
+      if (r.weekdays.indexOf(todayWd) !== -1) {
+        var startMin = timeToMinutes(r.time);
+        var end = calcEndTime(r.time, r.duration);
+        var endMin = timeToMinutes(end);
+        // 答辩讲解用：结束时间超过当前时间则已结束；跨午夜(结束回绕)当天不关闭
+        var isOver = endMin > startMin ? (nowMin >= endMin) : false;
+        items.push({ id: r.id, time: r.time, end: end, text: r.text, isRoutine: true, isOver: isOver });
+      }
     });
     appState.todaySchedules.forEach(function (s) {
-      items.push({ id: s.id, time: s.time, text: s.text, isRoutine: false });
+      items.push({ id: s.id, time: s.time, text: s.text, isRoutine: false, isOver: false });
     });
     items.sort(function (a, b) { return a.time.localeCompare(b.time); });
 
@@ -610,31 +680,40 @@
     var html = '';
     items.forEach(function (it) {
       html +=
-        '<div class="schedule-item' + (it.isRoutine ? ' routine' : '') + '" data-id="' + it.id + '">' +
-          '<span class="schedule-time-tag">' + it.time + '</span>' +
+        '<div class="schedule-item' + (it.isRoutine ? ' routine' : '') + (it.isOver ? ' over' : '') + '" data-id="' + it.id + '">' +
+          '<span class="schedule-time-tag">' + (it.isRoutine ? it.time + '-' + it.end : it.time) + '</span>' +
           '<div class="schedule-content">' + escapeHtml(it.text) + '</div>' +
-          (it.isRoutine ? '<span class="schedule-tag">固定</span>' : '<button class="schedule-del" data-act="del">✕</button>') +
+          (it.isRoutine
+            ? (it.isOver ? '<span class="schedule-over-tag">已结束</span>' : '<span class="schedule-tag">固定</span>')
+            : '<button class="schedule-del" data-act="del">✕</button>') +
         '</div>';
     });
     dom.scheduleList.innerHTML = html;
   }
 
-  /* 答辩讲解用：渲染固定任务列表，按星期几+时间排序，每项带星期彩色标签 */
+  /* 答辩讲解用：渲染固定任务列表，多个重复日+时间段展示，按最早重复日+时间排序 */
   function renderRoutine() {
     if (appState.routines.length === 0) {
       dom.routineList.innerHTML = '<div class="routine-empty">还没有固定任务，添加后每周自动填入日程</div>';
       return;
     }
     var sorted = appState.routines.slice().sort(function (a, b) {
-      if (a.weekday !== b.weekday) return a.weekday - b.weekday;
+      var ma = Math.min.apply(null, a.weekdays);
+      var mb = Math.min.apply(null, b.weekdays);
+      if (ma !== mb) return ma - mb;
       return a.time.localeCompare(b.time);
     });
     var html = '';
     sorted.forEach(function (r) {
+      // 答辩讲解用：一个任务可对应多个重复日，逐个生成彩色星期标签
+      var tags = '';
+      r.weekdays.slice().sort(function (x, y) { return x - y; }).forEach(function (w) {
+        tags += '<span class="routine-wd-tag" style="background:' + WEEKDAY_COLORS[w] + '">' + WEEKDAY_NAMES[w] + '</span>';
+      });
       html +=
         '<div class="routine-item" data-id="' + r.id + '">' +
-          '<span class="routine-wd-tag" style="background:' + WEEKDAY_COLORS[r.weekday] + '">' + WEEKDAY_NAMES[r.weekday] + '</span>' +
-          '<span class="routine-time-tag">' + r.time + '</span>' +
+          '<span class="routine-wd-tags">' + tags + '</span>' +
+          '<span class="routine-time-tag">' + r.time + '-' + calcEndTime(r.time, r.duration) + '</span>' +
           '<div class="routine-content">' + escapeHtml(r.text) + '</div>' +
           '<button class="routine-del" data-act="del">✕</button>' +
         '</div>';
@@ -852,7 +931,12 @@
     if (item) deleteSchedule(item.getAttribute('data-id'));
   });
 
-  /* 答辩讲解用：固定任务事件，回车快速添加，删除后同步刷新日程 */
+  /* 答辩讲解用：固定任务事件，星期chips多选切换，回车快速添加，删除后同步刷新日程 */
+  dom.weekdayChips.addEventListener('click', function (e) {
+    var chip = e.target.closest('.wd-chip');
+    if (!chip) return;
+    chip.classList.toggle('active');
+  });
   dom.routineAdd.addEventListener('click', addRoutine);
   dom.routineText.addEventListener('keydown', function (e) { if (e.key === 'Enter') addRoutine(); });
   dom.routineList.addEventListener('click', function (e) {
@@ -875,6 +959,9 @@
   }
 
   /* 答辩讲解用：初始化，加载数据→示例填充→渲染 */
+  /* 答辩讲解用：每分钟刷新日程表，固定日程持续时间结束后自动置灰关闭 */
+  setInterval(renderSchedule, 60000);
+
   loadData();
   seedDemoIfEmpty();
   loadTodos();
