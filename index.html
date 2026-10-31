@@ -184,6 +184,33 @@
   }
   .todo-del:active { color: var(--DANGER); }
 
+  /* 答辩讲解用：历史清单区块，查看近7天每日清单，可单条恢复到今天 */
+  .todo-history-toggle {
+    text-align: center; font-size: 12px; color: var(--PRIMARY_COLOR);
+    padding: 8px 0 2px; cursor: pointer; user-select: none;
+  }
+  .todo-history-toggle:active { opacity: 0.6; }
+  .todo-history { margin-top: 8px; border-top: 1px dashed var(--BORDER); padding-top: 10px; }
+  .history-day { margin-bottom: 10px; }
+  .history-date-title {
+    font-size: 12px; color: var(--TEXT_SUB); font-weight: 600; margin-bottom: 6px;
+    display: flex; justify-content: space-between;
+  }
+  .history-count { font-weight: 400; }
+  .history-item {
+    display: flex; align-items: center; gap: 8px;
+    background: #f9f9fb; border-radius: 8px; padding: 7px 10px; margin-bottom: 4px;
+  }
+  .history-item.done .history-item-text { text-decoration: line-through; color: var(--TEXT_SUB); }
+  .history-item-check { color: var(--SUCCESS); font-size: 12px; flex-shrink: 0; width: 14px; text-align: center; }
+  .history-item-text { flex: 1; font-size: 13px; word-break: break-all; }
+  .history-restore-btn {
+    border: 1px solid var(--PRIMARY_COLOR); color: var(--PRIMARY_COLOR); background: #fff;
+    font-size: 11px; border-radius: 6px; padding: 3px 8px; cursor: pointer; flex-shrink: 0;
+  }
+  .history-restore-btn:active { background: var(--PRIMARY_COLOR); color: #fff; }
+  .history-empty { text-align: center; color: var(--TEXT_SUB); font-size: 12px; padding: 8px 0; }
+
   /* 答辩讲解用：今日日程表区块，置顶显示按时间排列的当天安排 */
   .schedule-section {
     background: var(--CARD_BG); border-radius: 16px; padding: 16px;
@@ -330,6 +357,9 @@
     <button class="todo-add" id="todoAdd">添加</button>
   </div>
   <div class="todo-list" id="todoList"></div>
+  <!-- 答辩讲解用：历史清单入口，展开后可查看近7天记录并单条恢复到今天 -->
+  <div class="todo-history-toggle" id="todoHistoryToggle">📜 查看近7天历史</div>
+  <div class="todo-history" id="todoHistory" style="display:none"></div>
 </div>
 
 <!-- 答辩讲解用：课程列表渲染容器 -->
@@ -411,6 +441,9 @@
   var WEEKDAY_NAMES = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
   var WEEKDAY_COLORS = ['#ff6b6b', '#fa8c16', '#faad14', '#52c41a', '#13c2c2', '#6366f1', '#eb2f96'];
   var DEFAULT_DURATION = 60;
+  // 答辩讲解用：上次活跃日期key，用于检测系统时间回跳，防止关机后日期错乱导致清单"消失"
+  var LAST_ACTIVE_DATE_KEY = 'last_active_date_v1';
+  var TODO_HISTORY_DAYS = 7;
 
   // 答辩讲解用：应用状态，courses课程、todayTodos今日清单、routines固定任务、todaySchedules今日临时日程
   var appState = { courses: [], editingId: null, todayTodos: [], routines: [], todaySchedules: [] };
@@ -435,6 +468,8 @@
     todoAdd: document.getElementById('todoAdd'),
     todoList: document.getElementById('todoList'),
     todoCount: document.getElementById('todoCount'),
+    todoHistoryToggle: document.getElementById('todoHistoryToggle'),
+    todoHistory: document.getElementById('todoHistory'),
     scheduleDate: document.getElementById('scheduleDate'),
     scheduleTime: document.getElementById('scheduleTime'),
     scheduleText: document.getElementById('scheduleText'),
@@ -558,19 +593,16 @@
     renderList();
   }
 
-  /* 答辩讲解用：获取今天星期几(0=周日,1-6=周一至周六) */
-  function getTodayWeekday() { return new Date().getDay(); }
+  /* 答辩讲解用：获取今天星期几(0=周日,1-6=周一至周六)，基于稳定日期防止时间跳变后固定任务错位 */
+  function getTodayWeekday() { return getStableDate().getDay(); }
 
-  /* 答辩讲解用：获取日期字符串YYYY-MM-DD，日程按天独立存储 */
-  function getDateStr() {
-    var now = new Date(); var m = now.getMonth() + 1, d = now.getDate();
-    return now.getFullYear() + '-' + (m < 10 ? '0' + m : m) + '-' + (d < 10 ? '0' + d : d);
-  }
+  /* 答辩讲解用：获取日期字符串YYYY-MM-DD，日程按天独立存储（带时间回跳保护） */
+  function getDateStr() { return getStableDateStr(); }
 
-  /* 答辩讲解用：获取今日日期显示文案，如"10月17日 周五" */
+  /* 答辩讲解用：获取今日日期显示文案，如"10月17日 周五"，基于稳定日期 */
   function getTodayDisplay() {
-    var now = new Date();
-    return (now.getMonth() + 1) + '月' + now.getDate() + '日 ' + WEEKDAY_NAMES[now.getDay()];
+    var dt = getStableDate();
+    return (dt.getMonth() + 1) + '月' + dt.getDate() + '日 ' + WEEKDAY_NAMES[dt.getDay()];
   }
 
   /* 答辩讲解用：加载固定任务(全局存储)和今日临时日程(按日期存储)，旧数据自动迁移 */
@@ -721,20 +753,41 @@
     dom.routineList.innerHTML = html;
   }
 
-  /* 答辩讲解用：获取今天日期key(YYYY-MM-DD)，清单按天独立存储，每天自动重置 */
-  function getTodayKey() {
+  /* 答辩讲解用：获取稳定日期字符串YYYY-MM-DD；关机/没电后系统时间回跳时沿用上次活跃日期，防止按日期存储的数据"消失" */
+  function getStableDateStr() {
     var now = new Date();
     var m = now.getMonth() + 1;
     var d = now.getDate();
-    return TODO_STORAGE_PREFIX + now.getFullYear() + '-' + (m < 10 ? '0' + m : m) + '-' + (d < 10 ? '0' + d : d);
+    var sysDate = now.getFullYear() + '-' + (m < 10 ? '0' + m : m) + '-' + (d < 10 ? '0' + d : d);
+    var lastDate = localStorage.getItem(LAST_ACTIVE_DATE_KEY);
+    var useDate = (lastDate && sysDate < lastDate) ? lastDate : sysDate;
+    // 答辩讲解用：时间正常时才更新活跃日期，回跳期间保持原值，等时间校正后自动回归
+    if (useDate === sysDate) localStorage.setItem(LAST_ACTIVE_DATE_KEY, sysDate);
+    return useDate;
   }
 
-  /* 答辩讲解用：加载今日清单，解析失败返回空数组保证健壮性 */
+  /* 答辩讲解用：获取稳定日期的Date对象，用于计算星期与显示文案 */
+  function getStableDate() {
+    var p = getStableDateStr().split('-');
+    return new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10));
+  }
+
+  /* 答辩讲解用：获取今天日期key(YYYY-MM-DD)，清单按天独立存储，每天自动重置 */
+  function getTodayKey() {
+    return TODO_STORAGE_PREFIX + getStableDateStr();
+  }
+
+  /* 答辩讲解用：加载今日清单；解析失败(数据损坏)时先备份原始内容再置空，避免空数据写回彻底覆盖 */
   function loadTodos() {
+    var key = getTodayKey();
     try {
-      var raw = localStorage.getItem(getTodayKey());
+      var raw = localStorage.getItem(key);
       appState.todayTodos = raw ? JSON.parse(raw) : [];
     } catch (e) {
+      try {
+        var bad = localStorage.getItem(key);
+        if (bad) localStorage.setItem('todo_corrupt_backup_' + getStableDateStr(), bad);
+      } catch (e2) {}
       appState.todayTodos = [];
     }
   }
@@ -793,6 +846,72 @@
         '</div>';
     });
     dom.todoList.innerHTML = html;
+  }
+
+  /* 答辩讲解用：历史日期格式化，"2026-10-21"转为"10月21日 周三"便于阅读 */
+  function formatHistoryDate(dateStr) {
+    var p = dateStr.split('-');
+    var dt = new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10));
+    return parseInt(p[1], 10) + '月' + parseInt(p[2], 10) + '日 ' + WEEKDAY_NAMES[dt.getDay()];
+  }
+
+  /* 答辩讲解用：遍历localStorage收集近7天有记录的历史清单(排除今天)，按日期倒序返回 */
+  function collectTodoHistory() {
+    var today = getStableDateStr();
+    var list = [];
+    for (var i = 0; i < localStorage.length; i++) {
+      var key = localStorage.key(i);
+      if (key && key.indexOf(TODO_STORAGE_PREFIX) === 0) {
+        var date = key.slice(TODO_STORAGE_PREFIX.length);
+        if (date !== today) {
+          try {
+            var items = JSON.parse(localStorage.getItem(key)) || [];
+            if (items.length > 0) list.push({ date: date, items: items });
+          } catch (e) {}
+        }
+      }
+    }
+    list.sort(function (a, b) { return b.date.localeCompare(a.date); });
+    return list.slice(0, TODO_HISTORY_DAYS);
+  }
+
+  /* 答辩讲解用：渲染历史清单列表，每天一个分组显示完成情况，每条带恢复按钮 */
+  function renderTodoHistory() {
+    var history = collectTodoHistory();
+    if (history.length === 0) {
+      dom.todoHistory.innerHTML = '<div class="history-empty">近' + TODO_HISTORY_DAYS + '天没有历史清单记录</div>';
+      return;
+    }
+    var html = '';
+    history.forEach(function (day) {
+      var doneCount = 0;
+      day.items.forEach(function (t) { if (t.done) doneCount++; });
+      html += '<div class="history-day" data-date="' + day.date + '">' +
+        '<div class="history-date-title"><span>' + formatHistoryDate(day.date) + '</span>' +
+        '<span class="history-count">完成 ' + doneCount + '/' + day.items.length + '</span></div>';
+      day.items.forEach(function (t) {
+        html += '<div class="history-item' + (t.done ? ' done' : '') + '">' +
+          '<span class="history-item-check">' + (t.done ? '✓' : '·') + '</span>' +
+          '<span class="history-item-text">' + escapeHtml(t.text) + '</span>' +
+          '<button class="history-restore-btn" data-date="' + day.date + '" data-id="' + t.id + '">恢复</button>' +
+        '</div>';
+      });
+      html += '</div>';
+    });
+    dom.todoHistory.innerHTML = html;
+  }
+
+  /* 答辩讲解用：从历史某天恢复单条清单到今天，新id避免冲突，状态重置为未完成 */
+  function restoreTodoItem(date, id) {
+    var items = [];
+    try { items = JSON.parse(localStorage.getItem(TODO_STORAGE_PREFIX + date)) || []; } catch (e) {}
+    var found = items.filter(function (t) { return t.id === id; })[0];
+    if (!found) { showToast('未找到该条记录'); return; }
+    appState.todayTodos.push({ id: genId(), text: found.text, done: false });
+    saveTodos();
+    renderTodos();
+    renderTodoHistory();
+    showToast('已恢复到今日清单');
   }
 
   /* 答辩讲解用：打开弹窗，传入课程对象则为编辑模式，否则为新增模式 */
@@ -919,6 +1038,19 @@
     var id = item.getAttribute('data-id');
     if (el.getAttribute('data-act') === 'toggle') { toggleTodo(id); }
     else if (el.getAttribute('data-act') === 'del') { deleteTodo(id); }
+  });
+
+  /* 答辩讲解用：历史清单事件，展开/收起切换，恢复按钮分发 */
+  dom.todoHistoryToggle.addEventListener('click', function () {
+    var isOpen = dom.todoHistory.style.display !== 'none';
+    dom.todoHistory.style.display = isOpen ? 'none' : 'block';
+    dom.todoHistoryToggle.textContent = isOpen ? '📜 查看近' + TODO_HISTORY_DAYS + '天历史' : '收起历史记录';
+    if (!isOpen) renderTodoHistory();
+  });
+  dom.todoHistory.addEventListener('click', function (e) {
+    var btn = e.target.closest('.history-restore-btn');
+    if (!btn) return;
+    restoreTodoItem(btn.getAttribute('data-date'), btn.getAttribute('data-id'));
   });
 
   /* 答辩讲解用：今日日程表事件，回车快速添加，删除临时日程 */
